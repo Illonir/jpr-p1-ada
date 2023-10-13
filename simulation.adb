@@ -134,43 +134,45 @@ procedure Simulation is
    end Fleet;
 
    task body Shipyard is
-      Storage_Capacity : constant Integer := 15;
+      Component_Capacity : constant Integer := 30;
       type Storage_type is array (Component_Type) of Integer;
-      Storage          : Storage_type := (0, 0, 0, 0, 0);
-      Assembly_Content : array (Vessel_Type, Component_Type) of Integer :=
-        ((2, 1, 2, 1, 2), (2, 2, 0, 1, 0), (1, 1, 2, 0, 1));
-      Max_Assembly_Content : array (Component_Type) of Integer;
-      Assembly_Number      : array (Vessel_Type) of Integer := (1, 1, 1);
-      In_Storage           : Integer                          := 0;
+      Component_Storage          : Storage_type := (0, 0, 0, 0, 0);
+      Vessel_Components : array (Vessel_Type, Component_Type) of Integer :=
+        ((2, 1, 2, 1, 2), 
+        (2, 2, 0, 1, 0), 
+        (1, 1, 2, 0, 1));
+      Max_Component_Content : array (Component_Type) of Integer;
+      Assembled_Vessels      : array (Vessel_Type) of Integer := (1, 1, 1);
+      Components_In_Storage           : Integer                          := 0;
 
       procedure Setup_Variables is
       begin
-         for W in Component_Type loop
-            Max_Assembly_Content (W) := 0;
-            for Z in Vessel_Type loop
-               if Assembly_Content (Z, W) > Max_Assembly_Content (W) then
-                  Max_Assembly_Content (W) := Assembly_Content (Z, W);
+         for C in Component_Type loop
+            Max_Component_Content (C) := 0;
+            for V in Vessel_Type loop
+               if Vessel_Components (V, C) > Max_Component_Content (C) then
+                  Max_Component_Content (C) := Vessel_Components (V, C);
                end if;
             end loop;
          end loop;
       end Setup_Variables;
 
-      function Can_Accept (Product : Component_Type) return Boolean is
-         Free : Integer;         --  free room in the storage
+      function Can_Accept_Component (Component : Component_Type) return Boolean is
+         Free_Storage_Room : Integer;         --  free room in the storage
          -- how many products are for production of arbitrary assembly
-         Lacking : array (Component_Type) of Integer;
+         Lacking_Min_Components : array (Component_Type) of Integer;
          -- how much room is needed in storage to produce arbitrary assembly
-         Lacking_room : Integer;
+         Lacking_Storage_Room : Integer;
          MP           : Boolean;                   --  can accept
       begin
-         if In_Storage >= Storage_Capacity then
+         if Components_In_Storage >= Component_Capacity then
             return False;
          end if;
          -- There is free room in the storage
-         Free := Storage_Capacity - In_Storage;
+         Free_Storage_Room := Component_Capacity - Components_In_Storage;
          MP   := True;
-         for W in Component_Type loop
-            if Storage (W) < Max_Assembly_Content (W) then
+         for C in Component_Type loop
+            if Component_Storage (C) < Max_Component_Content (C) then
                MP := False;
             end if;
          end loop;
@@ -179,100 +181,100 @@ procedure Simulation is
             --  assembly
          end if;
          if Integer'Max
-             (0, Max_Assembly_Content (Product) - Storage (Product)) >
+             (0, Max_Component_Content (Component) - Component_Storage (Component)) >
            0
          then
             -- exactly this product lacks
             return True;
          end if;
-         Lacking_room := 1;                     --  insert current product
-         for W in Component_Type loop
-            Lacking (W) :=
-              Integer'Max (0, Max_Assembly_Content (W) - Storage (W));
-            Lacking_room := Lacking_room + Lacking (W);
+         Lacking_Storage_Room := 1;                     --  insert current product
+         for C in Component_Type loop
+            Lacking_Min_Components (C) :=
+              Integer'Max (0, Max_Component_Content (C) - Component_Storage (C));
+            Lacking_Storage_Room := Lacking_Storage_Room + Lacking_Min_Components (C);
          end loop;
-         if Free >= Lacking_room then
+         if Free_Storage_Room >= Lacking_Storage_Room then
             -- there is enough room in storage for arbitrary assembly
             return True;
          else
             -- no room for this product
             return False;
          end if;
-      end Can_Accept;
+      end Can_Accept_Component;
 
-      function Can_Deliver (Assembly : Vessel_Type) return Boolean is
+      function Can_Deliver_Vessel (Vessel : Vessel_Type) return Boolean is
       begin
-         for W in Component_Type loop
-            if Storage (W) < Assembly_Content (Assembly, W) then
+         for C in Component_Type loop
+            if Component_Storage (C) < Vessel_Components (Vessel, C) then
                return False;
             end if;
          end loop;
          return True;
-      end Can_Deliver;
+      end Can_Deliver_Vessel;
 
-      procedure Storage_Contents is
+      procedure Show_Storage is
       begin
          Put ("Storage [");
-         for W in Component_Type loop
-            if W = 1 then
-               Put (Integer'Image (Storage (W)));
+         for C in Component_Type loop
+            if C = 1 then
+               Put (Integer'Image (Component_Storage (C)));
             else
-               Put (", " & Integer'Image (Storage (W)));
+               Put (", " & Integer'Image (Component_Storage (C)));
             end if;
          end loop;
          Put_Line ("]");
-      end Storage_Contents;
+      end Show_Storage;
 
    begin
       Put_Line ("Buffer started");
       Setup_Variables;
       loop
          accept Take_Component
-           (Product : in     Component_Type; Number : in Integer;
-            Halted  :    out Boolean)
+           (Component : in     Component_Type; Component_ID : in Integer;
+            Production_Halted  :    out Boolean)
          do
-            if Can_Accept (Product) then
+            if Can_Accept_Component (Component) then
                Put_Line
-                 ("Accepted product " & Product_Name (Product) & " number " &
-                  Integer'Image (Number));
-               Storage (Product) := Storage (Product) + 1;
-               In_Storage        := In_Storage + 1;
+                 ("Accepted component " & Component_Names (Component) & " number " &
+                  Integer'Image (Component_ID));
+               Component_Storage (Component) := Component_Storage (Component) + 1;
+               Components_In_Storage        := Components_In_Storage + 1;
             else
                Put_Line
-                 ("Rejected product " & Product_Name (Product) & " number " &
-                  Integer'Image (Number));
-               Halted := True;
+                 ("Rejected component " & Component_Names (Component) & " number " &
+                  Integer'Image (Component_ID));
+               Production_Halted := True;
             end if;
          end Take_Component;
 
-         Storage_Contents;
+         Show_Storage;
 
-         accept Deliver_Ready_Vessel (Assembly : in Vessel_Type; Number : out Integer) do
-            if Can_Deliver (Assembly) then
+         accept Deliver_Ready_Vessel (Vessel : in Vessel_Type; Vessel_ID : out Integer) do
+            if Can_Deliver_Vessel (Vessel) then
                Put_Line
-                 ("Delivered assembly " & Assembly_Name (Assembly) &
-                  " number " & Integer'Image (Assembly_Number (Assembly)));
-               for W in Component_Type loop
-                  Storage (W) := Storage (W) - Assembly_Content (Assembly, W);
-                  In_Storage  := In_Storage - Assembly_Content (Assembly, W);
+                 ("Delivered vessel " & Vessel_Names (Vessel) &
+                  " number " & Integer'Image (Assembled_Vessels (Vessel)));
+               for C in Component_Type loop
+                  Component_Storage (C) := Component_Storage (C) - Vessel_Components (Vessel, C);
+                  Components_In_Storage  := Components_In_Storage - Vessel_Components (Vessel, C);
                end loop;
-               Number                     := Assembly_Number (Assembly);
-               Assembly_Number (Assembly) := Assembly_Number (Assembly) + 1;
+               Vessel_ID                     := Assembled_Vessels (Vessel);
+               Assembled_Vessels (Vessel) := Assembled_Vessels (Vessel) + 1;
             else
                Put_Line
-                 ("Lacking products for assembly " & Assembly_Name (Assembly));
-               Number := 0;
+                 ("Lacking products for assembly " & Assembled_Vessels (Vessel));
+               Vessel_ID := 0;
             end if;
          end Deliver_Ready_Vessel;
-         Storage_Contents;
+         Show_Storage;
       end loop;
    end Shipyard;
 
 begin
-   for I in 1 .. Number_Of_Components loop
-      Comoponent_Producers (I).Start_Production (I, 10);
+   for C in 1 .. Number_Of_Components loop
+      Comoponent_Producers (C).Start_Production (C, 10);
    end loop;
-   for J in 1 .. Number_Of_Fleets loop
-      Fleets (J).Start (J, 12);
+   for F in 1 .. Number_Of_Fleets loop
+      Fleets (F).Start (F, 12);
    end loop;
 end Simulation;
