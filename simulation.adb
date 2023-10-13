@@ -7,143 +7,147 @@ with Ada.Integer_Text_IO;
 with Ada.Numerics.Discrete_Random;
 
 procedure Simulation is
-   Number_Of_Products   : constant Integer := 5;
-   Number_Of_Assemblies : constant Integer := 3;
-   Number_Of_Consumers  : constant Integer := 2;
-   subtype Product_Type is Integer range 1 .. Number_Of_Products;
-   subtype Assembly_Type is Integer range 1 .. Number_Of_Assemblies;
-   subtype Consumer_Type is Integer range 1 .. Number_Of_Consumers;
-   Product_Name : constant array (Product_Type) of String (1 .. 8) :=
-     ("Product1", "Product2", "Product3", "Product4", "Product5");
-   Assembly_Name : constant array (Assembly_Type) of String (1 .. 9) :=
-     ("Assembly1", "Assembly2", "Assembly3");
-   package Random_Assembly is new Ada.Numerics.Discrete_Random (Assembly_Type);
+   Number_Of_Components   : constant Integer := 5;
+   Number_Of_Vessels : constant Integer := 3;
+   Number_Of_Fleets  : constant Integer := 2;
+
+   subtype Component_Type is Integer range 1 .. Number_Of_Components;
+   subtype Vessel_Type is Integer range 1 .. Number_Of_Vessels;
+   subtype Fleet_Type is Integer range 1 .. Number_Of_Fleets;
+
+   Component_Names : constant array (Component_Type) of String (1 .. 32) :=
+     ("Engine", "Power generator", "Hull", "Central computer", "Armaments");
+   Vessel_Names : constant array (Vessel_Type) of String (1 .. 16) :=
+     ("Luxury yacht", "Cruiser", "Freighter");
+
+   package Random_Vessel is new Ada.Numerics.Discrete_Random (Vessel_Type);
    type My_Str is new String (1 .. 256);
 
    -- Producer produces determined product
-   task type Producer is
+   task type Component_Producer is
       -- Give the Producer an identity, i.e. the product type
-      entry Start (Product : in Product_Type; Production_Time : in Integer);
-   end Producer;
+      entry Start_Production (Component : in Component_Type; Production_Time : in Integer);
+   end Component_Producer;
 
    -- Consumer gets an arbitrary assembly of several products from the buffer
-   task type Consumer is
+   task type Fleet is
       -- Give the Consumer an identity
       entry Start
-        (Consumer_Number : in Consumer_Type; Consumption_Time : in Integer);
-   end Consumer;
+        (New_Fleet_Number : in Fleet_Type; New_Vessel_Integration_Time : in Integer);
+   end Fleet;
 
    -- In the Buffer, products are assemblied into an assembly
-   task type Buffer is
+   task type Shipyard is
       -- Accept a product to the storage provided there is a room for it
-      entry Take
-        (Product : in Product_Type; Number : in Integer; Halted : out Boolean);
+      entry Take_Component
+        (Component : in Component_Type; Component_ID : in Integer; Production_Halted : out Boolean);
       -- Deliver an assembly provided there are enough products for it
-      entry Deliver (Assembly : in Assembly_Type; Number : out Integer);
-   end Buffer;
+      entry Deliver_Ready_Vessel (Vessel : in Vessel_Type; Vessel_ID : out Integer);
+   end Shipyard;
 
-   P : array (1 .. Number_Of_Products) of Producer;
-   K : array (1 .. Number_Of_Consumers) of Consumer;
-   B : Buffer;
+   Comoponent_Producers : array (1 .. Number_Of_Components) of Component_Producer;
+   Fleets : array (1 .. Number_Of_Fleets) of Fleet;
+   Main_Shipyard : Shipyard;
 
-   task body Producer is
+   task body Component_Producer is
       subtype Production_Time_Range is Integer range 3 .. 6;
-      package Random_Production is new Ada.Numerics.Discrete_Random
+      package Random_Production_Time is new Ada.Numerics.Discrete_Random
         (Production_Time_Range);
-      G : Random_Production.Generator;   --  generator liczb losowych
-      Product_Type_Number : Integer;
-      Product_Number      : Integer;
-      Production          : Integer;
-      Halted              : Boolean := False;
-   begin
-      accept Start (Product : in Product_Type; Production_Time : in Integer) do
-         Random_Production.Reset (G);    --  start random number generator
-         Product_Number      := 1;
-         Product_Type_Number := Product;
-         Production          := Production_Time;
-      end Start;
+      Production_Time_Generator : Random_Production_Time.Generator;   --  generator liczb losowych
+      Component_Type_Number : Integer;
+      Current_Component_ID      : Integer;
+      Production          : Integer;   --???
+      Production_Halted              : Boolean := False;
 
-      Put_Line ("Started producer of " & Product_Name (Product_Type_Number));
+   begin
+      accept Start_Production (Component : in Component_Type; Production_Time : in Integer) do
+         Random_Production_Time.Reset (Production_Time_Generator);    --  start random number generator
+         Current_Component_ID      := 1;
+         Component_Type_Number := Component;
+         Production          := Production_Time;
+      end Start_Production;
+
+      Put_Line ("Started production of " & Component_Names (Component_Type_Number));
       loop
-         if Halted then
-            Halted := False;
+         if Production_Halted then
+            Production_Halted := False;
             Put_Line
-              ("###Production of product " &
-               Product_Name (Product_Type_Number) & " number " &
-               Integer'Image (Product_Number) & "halted");
+              ("###Production of component " &
+               Component_Names (Component_Type_Number) & " number " &
+               Integer'Image (Current_Component_ID) & "halted");
             delay Duration (6);-- one full production cycle
          else
             delay Duration
-              (Random_Production.Random (G)); --  symuluj produkcj\u00c4\u0099
+              (Random_Production_Time.Random (Production_Time_Generator)); --  symuluj produkcj\u00c4\u0099
             Put_Line
-              ("Produced product " & Product_Name (Product_Type_Number) &
-               " number " & Integer'Image (Product_Number));
-            Product_Number := Product_Number + 1;
+              ("Produced component " & Component_Names (Component_Type_Number) &
+               " number " & Integer'Image (Current_Component_ID));
+            Current_Component_ID := Current_Component_ID + 1;
          end if;
 
-         B.Take (Product_Type_Number, Product_Number, Halted);
+         Main_Shipyard.Take_Component (Component_Type_Number, Current_Component_ID, Production_Halted);
       end loop;
-   end Producer;
+   end Component_Producer;
 
-   task body Consumer is
-      subtype Consumption_Time_Range is Integer range 4 .. 8;
-      package Random_Consumption is new Ada.Numerics.Discrete_Random
-        (Consumption_Time_Range);
-      G : Random_Consumption.Generator;  --  random number generator (time)
-      G2              : Random_Assembly.Generator;    --  also (assemblies)
-      Consumer_Nb     : Consumer_Type;
+   task body Fleet is
+      subtype Integration_Time_Range is Integer range 4 .. 8;
+      package Random_Integration_Time is new Ada.Numerics.Discrete_Random
+        (Integration_Time_Range);
+      Integration_Time_Generator : Random_Integration_Time.Generator;  --  random number generator (time)
+      Vessel_Type_Generator : Random_Vessel.Generator;    --  also (assemblies)
+      Fleet_Number     : Fleet_Type;
       Assembly_Number : Integer;
-      Consumption     : Integer;
+      Integration     : Integer;
       Assembly_Type   : Integer;
-      Consumer_Name : constant array
-        (1 .. Number_Of_Consumers) of String (1 .. 9) :=
-        ("Consumer1", "Consumer2");
+      Fleet_Names : constant array
+        (1 .. Number_Of_Fleets) of String (1 .. 9) :=
+        ("Fleet1", "Fleet2");
    begin
       accept Start
-        (Consumer_Number : in Consumer_Type; Consumption_Time : in Integer)
+        (New_Fleet_Number : in Fleet_Type; New_Vessel_Integration_Time : in Integer)
       do
-         Random_Consumption.Reset (G);   --  ustaw generator
-         Random_Assembly.Reset (G2);     --  teÅ¼
-         Consumer_Nb := Consumer_Number;
-         Consumption := Consumption_Time;
+         Random_Integration_Time.Reset (Integration_Time_Generator);   --  ustaw generator
+         Random_Vessel.Reset (Vessel_Type_Generator);     --  teÅ¼
+         Fleet_Number := New_Fleet_Number;
+         Integration := New_Vessel_Integration_Time;
       end Start;
 
-      Put_Line ("Started consumer " & Consumer_Name (Consumer_Nb));
+      Put_Line ("Started assembly of fleet " & Fleet_Names (Fleet_Number));
       loop
-         Assembly_Type := Random_Assembly.Random (G2);
+         Assembly_Type := Random_Vessel.Random (Vessel_Type_Generator);
 
          select
             -- take an assembly for consumption
-            B.Deliver (Assembly_Type, Assembly_Number);
+            Main_Shipyard.Deliver_Ready_Vessel (Vessel, Vessel_ID);
             Put_Line
-              (Consumer_Name (Consumer_Nb) & ": taken assembly " &
-               Assembly_Name (Assembly_Type) & " number " &
-               Integer'Image (Assembly_Number));
+              (Fleet_Names (Fleet_Number) & ": integrated vessel " &
+               Vessel_Names (Vessel) & " number " &
+               Integer'Image (Vessel_ID));
             delay Duration
-              (Random_Consumption.Random (G)); --  simulate consumption
+              (Random_Integration_Time.Random (Integration_Time_Generator)); --  simulate consumption
          else
-            Put_Line ("$$$Consumer wouldnt wait");
+            Put_Line ("$$$Fleet wouldnt wait");
             delay Duration (8);
          end select;
 
       end loop;
-   end Consumer;
+   end Fleet;
 
-   task body Buffer is
+   task body Shipyard is
       Storage_Capacity : constant Integer := 15;
-      type Storage_type is array (Product_Type) of Integer;
+      type Storage_type is array (Component_Type) of Integer;
       Storage          : Storage_type := (0, 0, 0, 0, 0);
-      Assembly_Content : array (Assembly_Type, Product_Type) of Integer :=
+      Assembly_Content : array (Vessel_Type, Component_Type) of Integer :=
         ((2, 1, 2, 1, 2), (2, 2, 0, 1, 0), (1, 1, 2, 0, 1));
-      Max_Assembly_Content : array (Product_Type) of Integer;
-      Assembly_Number      : array (Assembly_Type) of Integer := (1, 1, 1);
+      Max_Assembly_Content : array (Component_Type) of Integer;
+      Assembly_Number      : array (Vessel_Type) of Integer := (1, 1, 1);
       In_Storage           : Integer                          := 0;
 
       procedure Setup_Variables is
       begin
-         for W in Product_Type loop
+         for W in Component_Type loop
             Max_Assembly_Content (W) := 0;
-            for Z in Assembly_Type loop
+            for Z in Vessel_Type loop
                if Assembly_Content (Z, W) > Max_Assembly_Content (W) then
                   Max_Assembly_Content (W) := Assembly_Content (Z, W);
                end if;
@@ -151,10 +155,10 @@ procedure Simulation is
          end loop;
       end Setup_Variables;
 
-      function Can_Accept (Product : Product_Type) return Boolean is
+      function Can_Accept (Product : Component_Type) return Boolean is
          Free : Integer;         --  free room in the storage
          -- how many products are for production of arbitrary assembly
-         Lacking : array (Product_Type) of Integer;
+         Lacking : array (Component_Type) of Integer;
          -- how much room is needed in storage to produce arbitrary assembly
          Lacking_room : Integer;
          MP           : Boolean;                   --  can accept
@@ -165,7 +169,7 @@ procedure Simulation is
          -- There is free room in the storage
          Free := Storage_Capacity - In_Storage;
          MP   := True;
-         for W in Product_Type loop
+         for W in Component_Type loop
             if Storage (W) < Max_Assembly_Content (W) then
                MP := False;
             end if;
@@ -182,7 +186,7 @@ procedure Simulation is
             return True;
          end if;
          Lacking_room := 1;                     --  insert current product
-         for W in Product_Type loop
+         for W in Component_Type loop
             Lacking (W) :=
               Integer'Max (0, Max_Assembly_Content (W) - Storage (W));
             Lacking_room := Lacking_room + Lacking (W);
@@ -196,9 +200,9 @@ procedure Simulation is
          end if;
       end Can_Accept;
 
-      function Can_Deliver (Assembly : Assembly_Type) return Boolean is
+      function Can_Deliver (Assembly : Vessel_Type) return Boolean is
       begin
-         for W in Product_Type loop
+         for W in Component_Type loop
             if Storage (W) < Assembly_Content (Assembly, W) then
                return False;
             end if;
@@ -209,7 +213,7 @@ procedure Simulation is
       procedure Storage_Contents is
       begin
          Put ("Storage [");
-         for W in Product_Type loop
+         for W in Component_Type loop
             if W = 1 then
                Put (Integer'Image (Storage (W)));
             else
@@ -223,8 +227,8 @@ procedure Simulation is
       Put_Line ("Buffer started");
       Setup_Variables;
       loop
-         accept Take
-           (Product : in     Product_Type; Number : in Integer;
+         accept Take_Component
+           (Product : in     Component_Type; Number : in Integer;
             Halted  :    out Boolean)
          do
             if Can_Accept (Product) then
@@ -239,16 +243,16 @@ procedure Simulation is
                   Integer'Image (Number));
                Halted := True;
             end if;
-         end Take;
+         end Take_Component;
 
          Storage_Contents;
 
-         accept Deliver (Assembly : in Assembly_Type; Number : out Integer) do
+         accept Deliver_Ready_Vessel (Assembly : in Vessel_Type; Number : out Integer) do
             if Can_Deliver (Assembly) then
                Put_Line
                  ("Delivered assembly " & Assembly_Name (Assembly) &
                   " number " & Integer'Image (Assembly_Number (Assembly)));
-               for W in Product_Type loop
+               for W in Component_Type loop
                   Storage (W) := Storage (W) - Assembly_Content (Assembly, W);
                   In_Storage  := In_Storage - Assembly_Content (Assembly, W);
                end loop;
@@ -259,16 +263,16 @@ procedure Simulation is
                  ("Lacking products for assembly " & Assembly_Name (Assembly));
                Number := 0;
             end if;
-         end Deliver;
+         end Deliver_Ready_Vessel;
          Storage_Contents;
       end loop;
-   end Buffer;
+   end Shipyard;
 
 begin
-   for I in 1 .. Number_Of_Products loop
-      P (I).Start (I, 10);
+   for I in 1 .. Number_Of_Components loop
+      Comoponent_Producers (I).Start_Production (I, 10);
    end loop;
-   for J in 1 .. Number_Of_Consumers loop
-      K (J).Start (J, 12);
+   for J in 1 .. Number_Of_Fleets loop
+      Fleets (J).Start (J, 12);
    end loop;
 end Simulation;
